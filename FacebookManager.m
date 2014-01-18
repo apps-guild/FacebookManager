@@ -92,46 +92,39 @@
   NSURL *URL = [NSURL URLWithString:URLString];
   NSMutableURLRequest *publishRequest = [NSMutableURLRequest requestWithURL:URL];
   [publishRequest setHTTPMethod:@"POST"];
-  NSString *body = @"event=MOBILE_APP_INSTALL";
-  if (_attributionID.length != 0) {
-    body = [NSString stringWithFormat:@"%@&attribution=%@", body, _attributionID];
-  }
-  if (_advertiserID.length != 0) {
-    body = [NSString stringWithFormat:@"%@&advertiser_id=%@", body, _advertiserID];
-  }
-  body = [NSString stringWithFormat:@"%@&application_tracking_enabled=0&advertiser_tracking_enabled=0", body];
-
+  
   NSBundle *mainBundle = [NSBundle mainBundle];
-
-  NSString *bundleIdentifier = mainBundle.bundleIdentifier;
-  if (bundleIdentifier.length > 0) {
-    body = [NSString stringWithFormat:@"%@&bundle_id=%@", body, bundleIdentifier];
-  }
-
-  NSMutableArray *urlSchemes = [[NSMutableArray alloc] init];
+  NSMutableArray *urlSchemes = [NSMutableArray arrayWithCapacity:1];
   for (NSDictionary *fields in [mainBundle objectForInfoDictionaryKey:@"CFBundleURLTypes"]) {
     NSArray *schemesForType = [fields objectForKey:@"CFBundleURLSchemes"];
     if (schemesForType) {
       [urlSchemes addObjectsFromArray:schemesForType];
     }
   }
-  if (urlSchemes.count > 0) {
-    NSData *json = [NSJSONSerialization dataWithJSONObject:urlSchemes
-                                                   options:0
-                                                     error:nil];
-    body = [NSString stringWithFormat:@"%@&url_schemes=%@", body,
-              [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding]];
-  }
-
-  NSString *longVersion = [mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"];
-  if (longVersion.length > 0) {
-    body = [NSString stringWithFormat:@"%@&bundle_version=%@", body, longVersion];
-  }
-
-  NSString *shortVersion = [mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
-  if (shortVersion.length > 0) {
-    body = [NSString stringWithFormat:@"%@&bundle_short_version=%@", body, shortVersion];
-  }
+  
+  NSDictionary *params = @{
+                           @"event"          : @"MOBILE_APP_INSTALL",
+                           @"attribution"    : (_attributionID ?: @""),
+                           @"advertiser_id"  : (_advertiserID  ?: @""),
+                           @"application_tracking_enabled" : @"0",
+                           @"advertiser_tracking_enabled"  : @"0",
+                           @"bundle_id"      : (mainBundle.bundleIdentifier ?: @""),
+                           @"bundle_version" : ([mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @""),
+                           @"bundle_short_version" : ([mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @""),
+                           @"url_schemes"    : urlSchemes
+                           };
+  NSMutableString *body = NSMutableString.string;
+  
+  [params enumerateKeysAndObjectsUsingBlock:^(id key, id object, BOOL *stop) {
+    NSString *value = object;
+    if ([object isKindOfClass:[NSArray class]]) {
+      value = ((NSArray *)object).count > 0 ?
+      [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:object options:0 error:nil] encoding:NSUTF8StringEncoding] : nil;
+    }
+    if (value.length != 0) {
+      [body appendFormat:(body.length ? @"&%@=%@" : @"%@=%@"), key, value];
+    }
+  }];
 
   [publishRequest setHTTPBody:[body dataUsingEncoding:NSUTF8StringEncoding]];
   self.publishConnection = [NSURLConnection connectionWithRequest:publishRequest delegate:self];
